@@ -37,6 +37,20 @@
     .btn[aria-pressed="true"],.btn.selected{box-shadow:inset 0 0 0 2px var(--accent);border-color:var(--accent)}
     .entry-button{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:58px;padding:12px 20px;font-size:1.08rem}.entry-icon{width:22px;height:22px;flex:0 0 auto}.entry-speaking{background:var(--warm-2);border-color:#dfbca6;color:#9f5633}.entry-speaking:hover{border-color:var(--warm)}
     .review-entry{min-width:158px;background:transparent;border-color:var(--line);color:var(--muted);text-decoration:none;font-size:.96rem;font-weight:650}.review-entry:hover{border-color:var(--accent);color:var(--accent)}.review-entry-icon{font-size:1.08rem;color:var(--accent);line-height:1}.review-entry-copy{display:grid;gap:1px;text-align:left;line-height:1.2}.review-entry-copy strong{font-size:.96rem;font-weight:720}.review-entry-copy small{color:var(--muted);font-size:.72rem;font-weight:600}
+
+.speaker-indicators{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap;margin:0 0 22px;min-height:40px;text-align:left}
+.speaker-indicator{display:inline-flex;align-items:center;gap:8px;padding:5px 13px 5px 5px;border:1px solid var(--line);border-radius:24px;color:var(--muted);background:var(--surface);font-size:15px;font-weight:600;white-space:nowrap}
+.speaker-indicator b{display:grid;place-items:center;width:29px;height:29px;border-radius:50%;background:var(--surface-2);color:var(--muted);font-size:13px}
+.speaker-indicator.current{color:var(--accent);border-color:var(--accent);background:var(--accent-2)}
+.speaker-indicator.current b{background:var(--accent);color:var(--surface)}
+.speaker-indicator[data-speaker="alvin"] b{background:#eee4cf;color:#796744}
+.speaker-indicator[data-speaker="alvin"].current b{background:#947c49;color:#fff}
+.review-placeholder:disabled{opacity:1;cursor:default;background:transparent;border-color:var(--line);color:var(--muted);box-shadow:none}
+/* Reserve the same title width as a live entry without inventing a review target. */
+.review-placeholder .review-entry-copy strong::after{content:" Day 001";visibility:hidden}
+.review-placeholder:disabled .review-entry-icon{color:var(--muted)}
+@media(prefers-color-scheme:dark){.speaker-indicator[data-speaker="alvin"] b{background:#514831;color:#eee0bd}}
+
     .stage-shell{max-width:940px;margin:0 auto}.stage-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:24px}.stage-kicker{color:var(--accent);font-weight:800;font-size:.9rem;text-transform:uppercase;letter-spacing:.08em}
     .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:clamp(18px,4vw,34px);box-shadow:var(--shadow)}
     .listen-space{min-height:240px;display:grid;place-items:center;text-align:left}.listen-space>div{width:min(760px,100%)}
@@ -214,6 +228,41 @@
     function renderSegmentedTrack(){const duration=audio.duration||DATA.timing.audio.durationSeconds;document.querySelectorAll('[data-segmented-track]').forEach(host=>{host.innerHTML='';sentenceSegments.forEach((sentence,index)=>{const visualStart=index===0?0:sentence.startSeconds;const visualEnd=index<sentenceSegments.length-1?sentenceSegments[index+1].startSeconds:duration;const segment=document.createElement('span');segment.className='sentence-segment';segment.dataset.start=String(visualStart);segment.dataset.end=String(visualEnd);segment.style.flexGrow=String(Math.max(.01,visualEnd-visualStart));const fill=document.createElement('span');fill.className='sentence-segment-fill';segment.appendChild(fill);host.appendChild(segment)})})}
     function updateSegmentedTrack(time,sentenceIndex){document.querySelectorAll('[data-segmented-track]').forEach(host=>{host.querySelectorAll('.sentence-segment').forEach((segment,index)=>{const start=Number(segment.dataset.start);const end=Number(segment.dataset.end);const ratio=end>start?Math.max(0,Math.min(1,(time-start)/(end-start))):0;segment.querySelector('.sentence-segment-fill').style.width=`${ratio*100}%`;segment.classList.toggle('current',index===sentenceIndex)})})}
     function updateSeekNavigation(){const duration=audio.duration||DATA.timing.audio.durationSeconds;const sentenceIndex=currentSentenceIndex(audio.currentTime);document.querySelectorAll('[data-seek]').forEach(slider=>{slider.max=String(duration);slider.value=String(Math.min(audio.currentTime,duration));slider.setAttribute('aria-valuetext',`${formatTime(audio.currentTime)} / ${formatTime(duration)}`)});updateSegmentedTrack(audio.currentTime,sentenceIndex);document.querySelectorAll('[data-sentence="previous"]').forEach(button=>{const current=sentenceSegments[sentenceIndex];button.disabled=sentenceIndex<=0&&(!current||audio.currentTime-current.startSeconds<=2)});document.querySelectorAll('[data-sentence="next"]').forEach(button=>button.disabled=sentenceIndex<0||sentenceIndex>=sentenceSegments.length-1)}
+    function initSpeakerIndicators(){
+      const speakers=[...new Set(DATA.turns.map(turn=>turn.speaker))],strips=[];
+      const owners=new Map(DATA.turns.map(turn=>[turn.turnId,turn.speaker]));
+      for(const id of ['blind','animation','speak-echo','speak-final-listen']){
+        const stage=document.getElementById('stage-'+id),strip=document.createElement('div');
+        strip.className='speaker-indicators';strip.setAttribute('aria-label',speakers.length>1?'对话角色':'独白角色');
+        for(const speaker of speakers){
+          const item=document.createElement('span');item.className='speaker-indicator';item.dataset.speaker=speaker;
+          const icon=document.createElement('b');icon.setAttribute('aria-hidden','true');icon.textContent=speaker==='skye'?'S':'A';
+          const name=document.createElement('span');name.textContent=speaker==='skye'?'Skye':'Alvin';item.append(icon,name);strip.append(item);
+        }
+        const host=id==='blind'?stage.querySelector('.listen-space>div'):id==='speak-echo'?stage.querySelector('.speaking-workspace'):stage.querySelector('.panel');
+        host.prepend(strip);strips.push(strip);
+      }
+      let last='',frame=null;
+      function update(){
+        let turn=DATA.timing.turns[0];for(const item of DATA.timing.turns){if(audio.currentTime>=item.startSeconds)turn=item;else break;}
+        let speaker=owners.get(turn.turnId);
+        if(currentStage==='speak-echo'){
+          const index=Number(document.getElementById('echo-counter').dataset.sentenceIndex||0);
+          speaker=owners.get(DATA.sentenceSegments[index]?.turnId)||speaker;
+        }
+        const key=currentStage+':'+speaker;if(key===last)return;last=key;
+        for(const strip of strips)for(const item of strip.children){
+          const active=item.dataset.speaker===speaker;item.classList.toggle('current',active);
+          item.setAttribute('aria-label',`${item.dataset.speaker==='skye'?'Skye':'Alvin'}${active?'，当前角色':''}`);
+        }
+      }
+      function tick(){update();frame=audio.paused?null:requestAnimationFrame(tick);}
+      for(const event of ['timeupdate','seeked','seeking','loadedmetadata','pause','ended'])audio.addEventListener(event,update);
+      audio.addEventListener('play',()=>{if(frame!==null)cancelAnimationFrame(frame);tick();});
+      window.addEventListener('lesson-stage-shown',()=>{if(frame!==null)cancelAnimationFrame(frame);frame=null;update();});
+      new MutationObserver(update).observe(document.getElementById('echo-counter'),{attributes:true,attributeFilter:['data-sentence-index']});
+      update();
+    }
     function updateTime(){const text=`${formatTime(audio.currentTime)} / ${formatTime(audio.duration||DATA.timing.audio.durationSeconds)}`;document.querySelectorAll('[data-time]').forEach(node=>node.textContent=text);updateSeekNavigation()}
     function updatePlayButtons(){document.querySelectorAll('[data-audio="toggle"]').forEach(button=>button.textContent=audio.paused?'播放':'暂停')}
     function setCueState(time){let activeIndex=Math.max(0,DATA.timing.cueStates.length-1);for(let index=0;index<DATA.timing.cueStates.length;index+=1){if(time<DATA.timing.cueStates[index].endSeconds){activeIndex=index;break}}document.querySelectorAll('.cue-card').forEach((node,index)=>{const active=index===activeIndex;node.classList.toggle('active',active);node.setAttribute('aria-pressed',String(active))})}
@@ -308,7 +357,7 @@
       const fitLine=host=>requestAnimationFrame(()=>{host.classList.remove('long');host.classList.toggle('long',host.scrollHeight>host.clientHeight+1)});
       function renderChunks(host,item){host.innerHTML='';item.chunkIds.forEach((chunkId,index)=>{const chunk=chunkById.get(chunkId);const span=document.createElement('span');span.className='meaning-chunk';span.dataset.chunkIndex=chunk.index;span.textContent=chunk.text;host.appendChild(span);if(index<item.chunkIds.length-1)host.append(' ')});updateSpeakingTextState(audio.currentTime);fitLine(host)}
       function renderProgress(hostId,onSelect){const host=document.getElementById(hostId);host.innerHTML='';items.forEach((_,index)=>{const button=document.createElement('button');button.type='button';button.className=(index<sentenceIndex?'done ':'')+(index===sentenceIndex?'active':'');button.setAttribute('aria-label',`跳到第 ${index+1} 句`);if(index===sentenceIndex)button.setAttribute('aria-current','step');button.addEventListener('click',()=>onSelect(index));host.appendChild(button)})}
-      function renderEcho(){const item=items[sentenceIndex];document.getElementById('echo-counter').textContent=`第 ${sentenceIndex+1} / ${items.length} 句`;renderChunks(document.getElementById('echo-line'),item);echoNext.disabled=sentenceIndex===items.length-1;echoAuto.setAttribute('aria-pressed',String(autoRead));echoAuto.innerHTML=`<span>自动连读</span><span class="auto-state">${autoRead?'开':'关'}</span>`;document.getElementById('echo-auto-help').hidden=!autoRead;renderProgress('echo-progress',index=>{stopSpeaking();sentenceIndex=index;sentenceEnded=false;renderEcho();playSentence(true)})}
+      function renderEcho(){const item=items[sentenceIndex];document.getElementById('echo-counter').dataset.sentenceIndex=String(sentenceIndex);document.getElementById('echo-counter').textContent=`第 ${sentenceIndex+1} / ${items.length} 句`;renderChunks(document.getElementById('echo-line'),item);echoNext.disabled=sentenceIndex===items.length-1;echoAuto.setAttribute('aria-pressed',String(autoRead));echoAuto.innerHTML=`<span>自动连读</span><span class="auto-state">${autoRead?'开':'关'}</span>`;document.getElementById('echo-auto-help').hidden=!autoRead;renderProgress('echo-progress',index=>{stopSpeaking();sentenceIndex=index;sentenceEnded=false;renderEcho();playSentence(true)})}
       function syncRoles(){roleButtons.forEach(button=>{const role=button.dataset.fullRole;const available=format==='dialogue'||speakers.includes(role);button.disabled=!available;button.setAttribute('aria-pressed',String(available&&role===fullRole))})}
       function renderFull(){const item=items[sentenceIndex];const owner=ownerOf(item);const host=document.getElementById('full-line');document.getElementById('full-counter').textContent=`第 ${sentenceIndex+1} / ${items.length} 句`;if(format==='dialogue'&&owner!==fullRole){host.innerHTML='<div class="system-turn"><span></span><span class="system-wave" aria-hidden="true"><i></i><i></i><i></i></span></div>';host.querySelector('.system-turn span').textContent=`${speakerName(owner)} 正在回应`;fitLine(host)}else renderChunks(host,item);syncRoles();renderProgress('full-progress',index=>{stopSpeaking();sentenceIndex=index;renderFull();audio.currentTime=items[index].startSeconds;updateSpeakingTextState(audio.currentTime);audio.play()})}
       function syncPlayLabels(){echoPlay.textContent=currentStage==='speak-echo'&&!audio.paused?'暂停':'播放';fullPlay.textContent=currentStage==='speak-full'&&!audio.paused?'暂停':'播放'}
@@ -344,7 +393,7 @@
     audio.addEventListener('timeupdate',updateFromAudio);audio.addEventListener('play',updatePlayButtons);audio.addEventListener('pause',updatePlayButtons);audio.addEventListener('loadedmetadata',()=>{renderSegmentedTrack();updateTime()});audio.addEventListener('ended',()=>{segmentEnd=null;updatePlayButtons()});
     document.addEventListener('keydown',event=>{const target=event.target;if(target&&['INPUT','TEXTAREA','SELECT','BUTTON'].includes(target.tagName))return;if(event.code==='Space'){event.preventDefault();toggleAudio()}else if(currentStage==='review'&&(event.key==='ArrowLeft'||event.key==='ArrowRight')){event.preventDefault();currentChunkIndex=Math.max(0,Math.min(DATA.timing.chunks.length-1,currentChunkIndex+(event.key==='ArrowRight'?1:-1)));const chunk=DATA.timing.chunks[currentChunkIndex];playSegment(chunk.startSeconds,chunk.endSeconds)}});
 
-    renderCueBoard();renderReview();const translationToggle=document.getElementById('review-translation-toggle');const translationLines=[...document.querySelectorAll('.sentence-translation')];translationLines.forEach(line=>line.setAttribute('aria-hidden','true'));translationToggle.addEventListener('click',()=>{const open=translationToggle.getAttribute('aria-pressed')!=='true';translationToggle.setAttribute('aria-pressed',String(open));translationToggle.setAttribute('aria-label',open?'隐藏全部中文':'显示全部中文');document.querySelectorAll('.meaning-pairs').forEach(pairs=>pairs.classList.toggle('show-translations',open));translationLines.forEach(line=>line.setAttribute('aria-hidden',String(!open)));});renderIntensive();renderSpeakingPractice();renderSegmentedTrack();updateTime();updatePlayButtons();if(requestedReview)start(reviewFlow);
+    renderCueBoard();renderReview();const translationToggle=document.getElementById('review-translation-toggle');const translationLines=[...document.querySelectorAll('.sentence-translation')];translationLines.forEach(line=>line.setAttribute('aria-hidden','true'));translationToggle.addEventListener('click',()=>{const open=translationToggle.getAttribute('aria-pressed')!=='true';translationToggle.setAttribute('aria-pressed',String(open));translationToggle.setAttribute('aria-label',open?'隐藏全部中文':'显示全部中文');document.querySelectorAll('.meaning-pairs').forEach(pairs=>pairs.classList.toggle('show-translations',open));translationLines.forEach(line=>line.setAttribute('aria-hidden',String(!open)));});renderIntensive();renderSpeakingPractice();initSpeakerIndicators();renderSegmentedTrack();updateTime();updatePlayButtons();if(requestedReview)start(reviewFlow);
   })();
   </script>
 </body>
